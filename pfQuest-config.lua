@@ -10,20 +10,44 @@ local function iterConfigFrames(fn)
     end
 end
 
+local XConfigObjectOffset = 10
+local YConfigObjectOffset = -10
+
+local modifiedConfig = {}
+for key, value in pairs(pfQuest_config) do
+    modifiedConfig[key] = value
+end
+    
 function OnCheckboxClick(self, key)
-    print(key .. " is now " .. tostring(self:GetChecked()))
-    pfQuest_config[key] = self:GetChecked()
+    modifiedConfig[key] = self:GetChecked() and "1" or "0"
 end
 
 function OnEditBoxEnterPressed(self, key)
-    print(key .. " value is " .. self:GetText())
-    pfQuest_config[key] = self:GetText()
+    modifiedConfig[key] = self:GetText()
 end
 
-function AddLabel(parent, item, anchor)
+function OnSliderValueChanged(self, value, key)
+    self.label:SetText(string.format("%.1f", value / 100))
+    modifiedConfig[key] = tostring(value / 100)
+
+    if pfQuest and pfQuest.route and pfQuest.route.arrow then
+        pfQuest.route.arrow:ApplyScale()
+    end
+end
+
+function AddLabel(parent, text, anchor)
     local label = parent:CreateFontString(nil, "OVERLAY", "GameFontWhite")
     label:SetPoint("LEFT", anchor, "RIGHT", 3, 0)
-    label:SetText(item.text)
+    label:SetText(text)
+    return label
+end
+
+function SetConfigObjectLocation(object, anchor)
+    if anchor == nil then
+	    object:SetPoint("TOPLEFT", XConfigObjectOffset, YConfigObjectOffset)
+    else
+        object:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, YConfigObjectOffset)
+    end
 end
 
 function AddOptionsPanel(name, parent)	
@@ -31,6 +55,21 @@ function AddOptionsPanel(name, parent)
 	optionsPanel.name = name
     optionsPanel.parent = parent
 	
+    optionsPanel.okay = function(self)
+        local reload = false
+
+        for key, value in pairs(modifiedConfig) do
+            if value ~= pfQuest_config[key] then
+                pfQuest_config[key] = value
+                reload = true
+            end
+        end
+
+        if reload then
+            ReloadUI()
+        end
+    end
+
 	InterfaceOptions_AddCategory(optionsPanel)
 	
 	return optionsPanel
@@ -38,20 +77,15 @@ end
 
 function AddCheckboxToPanel(parent, item, anchor)
     local checkbox = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
+    checkbox:SetChecked(modifiedConfig[item.config])
 
     checkbox:SetScript("OnClick", function(self)
         OnCheckboxClick(self, item.config)
     end)
 
-    if anchor == nil then
-	    checkbox:SetPoint("TOPLEFT", 10, -10)
-    else
-        checkbox:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -10)
-    end
+    SetConfigObjectLocation(checkbox, anchor)
 
-    checkbox:SetChecked(pfQuest_config[item.config])
-
-    AddLabel(parent, item, checkbox)
+    AddLabel(parent, item.text, checkbox)
 
     return checkbox
 end
@@ -63,11 +97,7 @@ function AddEditBoxToPanel(parent, item, anchor)
         OnEditBoxEnterPressed(self, item.config)
     end)
 
-    if anchor == nil then
-        editbox:SetPoint("TOPLEFT", 10, -10)
-    else
-        editbox:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -10)
-    end
+    SetConfigObjectLocation(editbox, anchor)
 
     editbox:SetWidth(40)
     editbox:SetHeight(20)
@@ -85,26 +115,21 @@ function AddEditBoxToPanel(parent, item, anchor)
     editbox:SetTextColor(1, 1, 1, 1)
     editbox:SetAutoFocus(false)
     editbox:SetJustifyH("CENTER")
-    editbox:SetText(pfQuest_config[item.config])
+    editbox:SetText(modifiedConfig[item.config])
     editbox:ClearFocus()
     editbox:SetCursorPosition(0)
 
-    AddLabel(parent, item, editbox)
+    AddLabel(parent, item.text, editbox)
 
     return editbox
 end
 
 function AddSliderToPanel(parent, item, anchor)
-    local label = parent:CreateFontString(nil, "OVERLAY", "GameFontWhite")
-    if anchor == nil then
-        label:SetPoint("TOPLEFT", 20, -15)
-    else
-        label:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -15)
-    end
-    label:SetText(item.text)
+    local label = AddLabel(parent, item.text, anchor)
+    SetConfigObjectLocation(label, anchor)
 
     local slider = CreateFrame("Slider", nil, parent)
-    slider:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -10)
+    slider:SetPoint("LEFT", label, "RIGHT", XConfigObjectOffset, 0)
     slider:SetWidth(200)
     slider:SetHeight(20)
     slider:SetValueStep(0.1)
@@ -129,17 +154,11 @@ function AddSliderToPanel(parent, item, anchor)
     slider:SetOrientation("HORIZONTAL")
     slider:SetThumbTexture(thumb)
 
-    local valueLabel = parent:CreateFontString(nil, "OVERLAY", "GameFontWhite")
-    valueLabel:SetPoint("LEFT", slider, "RIGHT", 10, 0)
-    valueLabel:SetText(tostring(math.floor(pfQuest_config[item.config])))
+    local value = tostring(math.floor(modifiedConfig[item.config]))
+    slider.label = AddLabel(parent, value, slider)
 
     slider:SetScript("OnValueChanged", function(self, value)
-        valueLabel:SetText(string.format("%.1f", value / 100))
-        pfQuest_config[item.config] = tostring(value / 100)
-
-        if pfQuest and pfQuest.route and pfQuest.route.arrow then
-            pfQuest.route.arrow:ApplyScale()
-        end
+        OnSliderValueChanged(self, value, item.config)
     end)
 
     return slider
@@ -169,6 +188,13 @@ local function RebuildConfigUI()
     pfQuestConfig:CreateConfigEntries(pfQuest_defconfig)
 
     local pfQuestConfigPanel = AddOptionsPanel("pfQuest", nil)
+    pfQuestConfigPanel:SetScript("OnShow", function(self)
+        modifiedConfig = {}
+        for key, value in pairs(pfQuest_config) do
+            modifiedConfig[key] = value
+        end
+    end)
+
     local currentPanel = pfQuestConfigPanel
 
     local optionAnchor = nil
