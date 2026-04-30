@@ -376,7 +376,7 @@ local function ExtendPfQuestConfig()
     table.insert(
         pfQuest_defconfig,
         {
-            text = "|cff33ffccNameplates|r",
+            text = "Nameplates",
             type = "header"
         }
     )

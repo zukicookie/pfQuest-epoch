@@ -1007,7 +1007,7 @@ local function ExtendPfQuestConfig()
     table.insert(
         pfQuest_defconfig,
         {
-            text = "|cff33ffccContinent Map|r",
+            text = "Continent Map",
             type = "header"
         }
     )
@@ -1095,7 +1095,7 @@ local function ExtendPfQuestConfig()
     table.insert(
         pfQuest_defconfig,
         {
-            text = "|cff33ffccMap Toggle Buttons|r",
+            text = "Map Toggle Buttons",
             type = "header"
         }
     )
