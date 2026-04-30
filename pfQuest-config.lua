@@ -10,93 +10,106 @@ local function iterConfigFrames(fn)
     end
 end
 
-
-function AddCheckboxToPanel(parent, text, checked, anchor)
-  local checkbox = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
-
-  if anchor == nil then
-	  checkbox:SetPoint("TOPLEFT", 10, -10)
-  else
-    checkbox:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -10)
-  end
-
-  checkbox:SetChecked(checked)
-
-	local label = parent:CreateFontString(nil, "OVERLAY", "GameFontWhite")
-	label:SetPoint("LEFT", checkbox, "RIGHT", 3, 0)
-	label:SetText(text)
-
-  return checkbox
+function OnCheckboxClick(self, key)
+    print(key .. " is now " .. tostring(self:GetChecked()))
+    pfQuest_config[key] = self:GetChecked()
 end
 
-function AddEditBoxToPanel(parent, text, defaultValue, anchor)
+function OnEditBoxEnterPressed(self, key)
+    print(key .. " value is " .. self:GetText())
+    pfQuest_config[key] = self:GetText()
+end
 
-  local editbox = CreateFrame("EditBox", nil, parent)
-  if anchor == nil then
-	  editbox:SetPoint("TOPLEFT", 10, -10)
-  else
-    editbox:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -10)
-  end
-
-  editbox:SetWidth(30)
-  editbox:SetHeight(20)
-    editbox:SetBackdrop({
-    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
-    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
-    tile = true,
-    tileSize = 16,
-    edgeSize = 16,
-    insets = {left = 4, right = 4, top = 4, bottom = 4}
-  })
-
-  editbox:SetBackdropColor(0.1, 0.1, 0.1, 0.8)
-  editbox:SetFont("Fonts/FRIZQT__.TTF", 12)
-  editbox:SetTextColor(1, 1, 1, 1)
-  editbox:SetAutoFocus(false)
-  editbox:SetJustifyH("CENTER")
-
-  local label = parent:CreateFontString(nil, "OVERLAY", "GameFontWhite")
-  label:SetPoint("LEFT", editbox, "RIGHT", 0, 0)
-  label:SetText(text)
-
-  return editbox
+function AddLabel(parent, item, anchor)
+    local label = parent:CreateFontString(nil, "OVERLAY", "GameFontWhite")
+    label:SetPoint("LEFT", anchor, "RIGHT", 3, 0)
+    label:SetText(item.text)
 end
 
 function AddOptionsPanel(name, parent)	
 	local optionsPanel = CreateFrame("Frame", nil, UIParent)
 	optionsPanel.name = name
-
-	if parent ~= nil then
-		optionsPanel.parent = parent
-	end
+    optionsPanel.parent = parent
 	
 	InterfaceOptions_AddCategory(optionsPanel)
 	
 	return optionsPanel
 end
 
-function AddText(parent, name, layer, inherits, point, x, y)
-	local fontString = parent:CreateFontString(name, layer, inherits)
-	fontString:SetPoint(point, x, y)
-	fontString:SetText(name)
+function AddCheckboxToPanel(parent, item, anchor)
+    local checkbox = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
+
+    checkbox:SetScript("OnClick", function(self)
+        OnCheckboxClick(self, item.config)
+    end)
+
+    if anchor == nil then
+	    checkbox:SetPoint("TOPLEFT", 10, -10)
+    else
+        checkbox:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -10)
+    end
+
+    checkbox:SetChecked(pfQuest_config[item.config])
+
+    AddLabel(parent, item, checkbox)
+
+    return checkbox
 end
 
-function AddSliderToPanel(parent, text, defaultValue, minValue, maxValue, anchor)
+function AddEditBoxToPanel(parent, item, anchor)
+    local editbox = CreateFrame("EditBox", nil, parent)
+
+    editbox:SetScript("OnEnterPressed", function(self)
+        OnEditBoxEnterPressed(self, item.config)
+    end)
+
+    if anchor == nil then
+        editbox:SetPoint("TOPLEFT", 10, -10)
+    else
+        editbox:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -10)
+    end
+
+    editbox:SetWidth(40)
+    editbox:SetHeight(20)
+    editbox:SetBackdrop({
+        bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+        edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+        tile = true,
+        tileSize = 16,
+        edgeSize = 16,
+        insets = {left = 4, right = 4, top = 4, bottom = 4}
+    })
+
+    editbox:SetBackdropColor(0.1, 0.1, 0.1, 0.8)
+    editbox:SetFont("Fonts/FRIZQT__.TTF", 12)
+    editbox:SetTextColor(1, 1, 1, 1)
+    editbox:SetAutoFocus(false)
+    editbox:SetJustifyH("CENTER")
+    editbox:SetText(pfQuest_config[item.config])
+    editbox:ClearFocus()
+    editbox:SetCursorPosition(0)
+
+    AddLabel(parent, item, editbox)
+
+    return editbox
+end
+
+function AddSliderToPanel(parent, item, anchor)
     local label = parent:CreateFontString(nil, "OVERLAY", "GameFontWhite")
     if anchor == nil then
         label:SetPoint("TOPLEFT", 20, -15)
     else
         label:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -15)
     end
-    label:SetText(text)
+    label:SetText(item.text)
 
     local slider = CreateFrame("Slider", nil, parent)
     slider:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -10)
     slider:SetWidth(200)
     slider:SetHeight(20)
     slider:SetValueStep(0.1)
-    slider:SetMinMaxValues(minValue * 100, maxValue * 100)
-    slider:SetValue(defaultValue * 100)
+    slider:SetMinMaxValues(item.min * 100, item.max * 100)
+    slider:SetValue(item.default * 100)
 
     slider:SetBackdrop({
         bgFile = "Interface/Tooltips/UI-Tooltip-Background",
@@ -111,18 +124,22 @@ function AddSliderToPanel(parent, text, defaultValue, minValue, maxValue, anchor
     local thumb = slider:CreateTexture()
     thumb:SetWidth(16)
     thumb:SetHeight(16)
-    thumb:SetColorTexture(0.8, 0.8, 0.8, 1)  -- Light gray
-    thumb:SetTexCoord(0, 1, 0, 1)  -- Ensure proper orientation
-    slider:SetOrientation("HORIZONTAL")  -- Add this
+    thumb:SetColorTexture(0.8, 0.8, 0.8, 1)
+    thumb:SetTexCoord(0, 1, 0, 1)
+    slider:SetOrientation("HORIZONTAL")
     slider:SetThumbTexture(thumb)
 
-    -- Display current value
     local valueLabel = parent:CreateFontString(nil, "OVERLAY", "GameFontWhite")
     valueLabel:SetPoint("LEFT", slider, "RIGHT", 10, 0)
-    valueLabel:SetText(tostring(math.floor(defaultValue)))
+    valueLabel:SetText(tostring(math.floor(pfQuest_config[item.config])))
 
     slider:SetScript("OnValueChanged", function(self, value)
         valueLabel:SetText(string.format("%.1f", value / 100))
+        pfQuest_config[item.config] = tostring(value / 100)
+
+        if pfQuest and pfQuest.route and pfQuest.route.arrow then
+            pfQuest.route.arrow:ApplyScale()
+        end
     end)
 
     return slider
@@ -161,13 +178,14 @@ local function RebuildConfigUI()
             currentPanel = AddOptionsPanel(item.text, pfQuestConfigPanel.name)
             optionAnchor = nil
         elseif item.type == "checkbox" then
-            optionAnchor = AddCheckboxToPanel(currentPanel, item.text, item.default, optionAnchor)
+            optionAnchor = AddCheckboxToPanel(currentPanel, item, optionAnchor)
         elseif item.type == "text" then
-            optionAnchor = AddEditBoxToPanel(currentPanel, item.text, item.default, optionAnchor)
+            optionAnchor = AddEditBoxToPanel(currentPanel, item, optionAnchor)
+        elseif item.type == "slider" then
+            optionAnchor = AddSliderToPanel(currentPanel, item, optionAnchor)
         end
     end
     
-    AddSliderToPanel(pfQuestConfigPanel, "abc", 1.0, 0.5, 3, optionAnchor)
     uiRebuilt = true
     return true
 end
