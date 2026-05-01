@@ -28,7 +28,10 @@ end
 
 function OnSliderValueChanged(self, value, key)
     self.label:SetText(string.format("%.1f", value / 100))
+
+    -- modifiedConfig[key] isn't REALLY needed here because the scaling is applied immediately
     modifiedConfig[key] = tostring(value / 100)
+    pfQuest_config[key] = modifiedConfig[key]
 
     if pfQuest and pfQuest.route and pfQuest.route.arrow then
         pfQuest.route.arrow:ApplyScale()
@@ -115,7 +118,7 @@ function AddEditBoxToPanel(parent, item, anchor)
     editbox:SetTextColor(1, 1, 1, 1)
     editbox:SetAutoFocus(false)
     editbox:SetJustifyH("CENTER")
-    editbox:SetText(modifiedConfig[item.config])
+    editbox:SetText(modifiedConfig[item.config] or item.default or "")
     editbox:ClearFocus()
     editbox:SetCursorPosition(0)
 
@@ -164,10 +167,26 @@ function AddSliderToPanel(parent, item, anchor)
     return slider
 end
 
-local function RebuildConfigUI()
-    if uiRebuilt then
-        return
+function AddButtonToPanel(parent, item, anchor)
+    local button = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+    button:SetPoint("LEFT", anchor, "RIGHT", XConfigObjectOffset, 0)
+    button:SetWidth(200)
+    button:SetHeight(25)
+    button:SetText(item.text)
+
+    SetConfigObjectLocation(button, anchor)
+
+    if item.func then
+        button:SetScript("OnClick", item.func)
     end
+
+    return button
+end
+
+local function RebuildConfigUI()
+    -- if uiRebuilt then
+    --     return
+    -- end
 
      if not pfQuestConfig or not pfQuestConfig.CreateConfigEntries then
         return false
@@ -190,25 +209,32 @@ local function RebuildConfigUI()
     local pfQuestConfigPanel = AddOptionsPanel("pfQuest", nil)
     pfQuestConfigPanel:SetScript("OnShow", function(self)
         modifiedConfig = {}
-        for key, value in pairs(pfQuest_config) do
-            modifiedConfig[key] = value
+        if not pfQuest_config then
+            for key, value in pairs(pfQuest_defconfig) do
+                modifiedConfig[key] = value
+            end
+        else
+            for key, value in pairs(pfQuest_config) do
+                modifiedConfig[key] = value
+            end
         end
     end)
 
     local currentPanel = pfQuestConfigPanel
-
-    local optionAnchor = nil
+    local lastAddedItem = nil   -- used as an anchor for the next item that is added
 
     for _, item in ipairs(pfQuest_defconfig) do
         if item.type == "header" then
             currentPanel = AddOptionsPanel(item.text, pfQuestConfigPanel.name)
-            optionAnchor = nil
+            lastAddedItem = nil
         elseif item.type == "checkbox" then
-            optionAnchor = AddCheckboxToPanel(currentPanel, item, optionAnchor)
+            lastAddedItem = AddCheckboxToPanel(currentPanel, item, lastAddedItem)
         elseif item.type == "text" then
-            optionAnchor = AddEditBoxToPanel(currentPanel, item, optionAnchor)
+            lastAddedItem = AddEditBoxToPanel(currentPanel, item, lastAddedItem)
         elseif item.type == "slider" then
-            optionAnchor = AddSliderToPanel(currentPanel, item, optionAnchor)
+            lastAddedItem = AddSliderToPanel(currentPanel, item, lastAddedItem)
+        elseif item.type == "button" then
+            lastAddedItem = AddButtonToPanel(currentPanel, item, lastAddedItem)
         end
     end
     
@@ -314,19 +340,8 @@ configFrame:SetScript("OnEvent", function(self, event)
             timer = timer + 1
 
             if timer > 10 then
-                if pfQuestConfig then
-                    RebuildConfigUI()
-
-                    -- Rebuild UI on first show to include epoch entries
-                    local originalOnShow = pfQuestConfig:GetScript("OnShow")
-                    pfQuestConfig:SetScript("OnShow", function()
-                        if originalOnShow then
-                            originalOnShow()
-                        end
-                        RebuildConfigUI()
-                        CreateSearchBar()
-                    end)
-
+                if RebuildConfigUI() then
+                    CreateSearchBar()
                     self:SetScript("OnUpdate", nil)
                     self:UnregisterAllEvents()
                 elseif timer > 300 then
