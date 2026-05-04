@@ -78,9 +78,9 @@ function AddOptionsPanel(name, parent)
 	return optionsPanel
 end
 
-function AddCheckboxToPanel(parent, item, anchor)
+function AddCheckboxToPanel(parent, item, value, anchor)
     local checkbox = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
-    checkbox:SetChecked(modifiedConfig[item.config])
+    checkbox:SetChecked(value)
 
     checkbox:SetScript("OnClick", function(self)
         OnCheckboxClick(self, item.config)
@@ -207,19 +207,14 @@ local function RebuildConfigUI()
     pfQuestConfig:CreateConfigEntries(pfQuest_defconfig)
 
     local pfQuestConfigPanel = AddOptionsPanel("pfQuest", nil)
-    pfQuestConfigPanel:SetScript("OnShow", function(self)
-        modifiedConfig = {}
-        if not pfQuest_config then
-            for key, value in pairs(pfQuest_defconfig) do
-                modifiedConfig[key] = value
-            end
-        else
-            for key, value in pairs(pfQuest_config) do
-                modifiedConfig[key] = value
-            end
-        end
-    end)
 
+    modifiedConfig = {}
+    for _, item in ipairs(pfQuest_defconfig) do
+        if item.config then
+            modifiedConfig[item.config] = pfQuest_config[item.config]
+        end
+    end
+    
     local currentPanel = pfQuestConfigPanel
     local lastAddedItem = nil   -- used as an anchor for the next item that is added
 
@@ -228,7 +223,7 @@ local function RebuildConfigUI()
             currentPanel = AddOptionsPanel(item.text, pfQuestConfigPanel.name)
             lastAddedItem = nil
         elseif item.type == "checkbox" then
-            lastAddedItem = AddCheckboxToPanel(currentPanel, item, lastAddedItem)
+            lastAddedItem = AddCheckboxToPanel(currentPanel, item, modifiedConfig[item.config], lastAddedItem)
         elseif item.type == "text" then
             lastAddedItem = AddEditBoxToPanel(currentPanel, item, lastAddedItem)
         elseif item.type == "slider" then
