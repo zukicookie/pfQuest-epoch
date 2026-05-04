@@ -16,6 +16,8 @@ local function RebuildConfigUI()
     pfQuestConfig.vpos = 40
     pfQuestConfig:CreateConfigEntries(pfQuest_defconfig)
 
+    pfQuestConfig:SetScale(math.min(1.0, 0.6 / UIParent:GetEffectiveScale()))
+
     return true
 end
 
