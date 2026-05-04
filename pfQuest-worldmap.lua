@@ -265,20 +265,17 @@ local function NodeAnimate(self, max)
     return
 end
 
--- Continent pins follow the same scaling rules as zone pins, sharing the
--- global `mainmap_inversescale` maintained by pfQuest core's map.lua. The
--- core hook recomputes it on every WorldMapDetailFrame/WorldMapButton scale
--- change; we piggyback on its ResizeNodes call below to resize ours too.
+local inverseMapScale = 1.0
 local function ResizeContinentNode(frame)
     if not frame.icon then
         -- Use config value for regular nodes, fallback to 12 if not set
         frame.defsize = tonumber(pfQuest_config["continentNodeSize"]) or 12
-        frame.defsize = frame.defsize * mainmap_inversescale
+        frame.defsize = frame.defsize * inverseMapScale
     else
         -- Use config value for utility NPCs, fallback to 14 if not set
         frame.defsize = tonumber(pfQuest_config["continentUtilityNodeSize"]) or 14
         -- Compensate for icon's 1 pixel padding so it doesn't shrink down to nothing
-        frame.defsize = (frame.defsize - 2) * mainmap_inversescale + 2
+        frame.defsize = (frame.defsize - 2) * inverseMapScale + 2
     end
     frame:SetWidth(frame.defsize)
     frame:SetHeight(frame.defsize)
@@ -296,12 +293,30 @@ local function ResizeContinentNodes()
     end
 end
 
--- Hook pfQuest core's ResizeNodes so continent pins resize alongside zone
--- pins whenever the map mode or Magnify zoom changes.
-local pfHook_ResizeNodes = pfMap.ResizeNodes
-function pfMap:ResizeNodes()
-    pfHook_ResizeNodes(self)
-    ResizeContinentNodes()
+-- Resize icons on map zoom change
+local function OnMapScaleChanged(frame, scale, originalfunction)
+    originalfunction(frame, scale)
+
+    local newInverseScale = 1.0 / WorldMapButton:GetEffectiveScale()
+    if (inverseMapScale ~= newInverseScale) then
+        inverseMapScale = newInverseScale
+        ResizeContinentNodes()
+    end
+end
+-- Listen for WorldMapFrame scale changes
+local originalWorldMapFrame_SetScale = WorldMapFrame.SetScale
+WorldMapFrame.SetScale = function(frame, scale)
+    OnMapScaleChanged(frame, scale, originalWorldMapFrame_SetScale)
+end
+-- Listen for WorldMapDetailFrame scale changes
+local originalWorldMapDetailFrame_SetScale = WorldMapDetailFrame.SetScale
+WorldMapDetailFrame.SetScale = function(frame, scale)
+    OnMapScaleChanged(frame, scale, originalWorldMapDetailFrame_SetScale)
+end
+-- Listen for WorldMapButton scale changes
+local originalWorldMapButton_SetScale = WorldMapButton.SetScale
+WorldMapButton.SetScale = function(frame, scale)
+    OnMapScaleChanged(frame, scale, originalWorldMapButton_SetScale)
 end
 
 local function CreateContinentPin(index)
@@ -609,11 +624,10 @@ function pfMap:UpdateNodes()
                                     local questLevel = tonumber(data.qlvl) or tonumber(data.lvl) or 0
                                     local minLevel = tonumber(data.min) or 0
 
-                                    local isCommission = title and string.find(title, "Commission for")
                                     if not isUtilityNPC then
                                         if pfQuest_config["showlowlevel"] == "0" then
                                             if questLevel > 0 and questLevel <= GetGrayLevel(playerLevel) then
-                                                if not (data.texture and string.find(data.texture, "complete")) and not isCommission then
+                                                if not (data.texture and string.find(data.texture, "complete")) then
                                                     skipNode = true
                                                     break
                                                 end
@@ -635,7 +649,7 @@ function pfMap:UpdateNodes()
                                     if not isUtilityNPC then
                                         if pfQuest_config["showlowlevel"] == "0" then
                                             if minLevel <= 1 and questLevel <= GetGrayLevel(playerLevel) then
-                                                if not (data.texture and string.find(data.texture, "complete")) and not isCommission then
+                                                if not (data.texture and string.find(data.texture, "complete")) then
                                                     skipNode = true
                                                     break
                                                 end
@@ -875,11 +889,10 @@ function pfMap:UpdateNodes()
                             local questLevel = tonumber(data.qlvl) or tonumber(data.lvl) or 0
                             local minLevel = tonumber(data.min) or 0
 
-                            local isCommission = title and string.find(title, "Commission for")
                             if not isUtilityNPC then
                                 if pfQuest_config["showlowlevel"] == "0" then
                                     if questLevel > 0 and questLevel <= GetGrayLevel(playerLevel) then
-                                        if not (data.texture and string.find(data.texture, "complete")) and not isCommission then
+                                        if not (data.texture and string.find(data.texture, "complete")) then
                                             skipNode = true
                                             break
                                         end
@@ -901,7 +914,7 @@ function pfMap:UpdateNodes()
                             if not isUtilityNPC then
                                 if pfQuest_config["showlowlevel"] == "0" then
                                     if minLevel <= 1 and questLevel <= GetGrayLevel(playerLevel) then
-                                        if not (data.texture and string.find(data.texture, "complete")) and not isCommission then
+                                        if not (data.texture and string.find(data.texture, "complete")) then
                                             skipNode = true
                                             break
                                         end
@@ -1032,6 +1045,24 @@ local function ExtendPfQuestConfig()
     table.insert(
         pfQuest_defconfig,
         {
+            text = "Continent Node Size",
+            default = "12",
+            type = "text",
+            config = "continentNodeSize"
+        }
+    )
+    table.insert(
+        pfQuest_defconfig,
+        {
+            text = "Continent Utility Node Size",
+            default = "14",
+            type = "text",
+            config = "continentUtilityNodeSize"
+        }
+    )
+    table.insert(
+        pfQuest_defconfig,
+        {
             text = "Hide Chicken Quests (CLUCK!)",
             default = "1",
             type = "checkbox",
@@ -1092,43 +1123,18 @@ local function ExtendPfQuestConfig()
             config = "epochHideItemDrops"
         }
     )
-    table.insert(
-        pfQuest_defconfig,
-        {
-            text = "|cff33ffccMap Toggle Buttons|r",
-            type = "header"
-        }
-    )
-    table.insert(
-        pfQuest_defconfig,
-        {
-            text = "Rares/Chests Button X Offset",
-            default = "-75",
-            type = "text",
-            config = "toggleBtnX"
-        }
-    )
-    table.insert(
-        pfQuest_defconfig,
-        {
-            text = "Rares/Chests Button Y Offset",
-            default = "-12",
-            type = "text",
-            config = "toggleBtnY"
-        }
-    )
 
     -- Initialize the config values with defaults
     pfQuest_config["epochContinentPins"] = pfQuest_config["epochContinentPins"] or "1"
     pfQuest_config["continentClickThrough"] = pfQuest_config["continentClickThrough"] or "0"
+    pfQuest_config["continentNodeSize"] = pfQuest_config["continentNodeSize"] or "12"
+    pfQuest_config["continentUtilityNodeSize"] = pfQuest_config["continentUtilityNodeSize"] or "14"
     pfQuest_config["epochHideChickenQuests"] = pfQuest_config["epochHideChickenQuests"] or "1"
     pfQuest_config["epochHideFelwoodFlowers"] = pfQuest_config["epochHideFelwoodFlowers"] or "1"
     pfQuest_config["epochHidePvPQuests"] = pfQuest_config["epochHidePvPQuests"] or "1"
     pfQuest_config["epochHideCommissionQuests"] = pfQuest_config["epochHideCommissionQuests"] or "0"
     pfQuest_config["epochHideDonationQuests"] = pfQuest_config["epochHideDonationQuests"] or "0"
     pfQuest_config["epochHideItemDrops"] = pfQuest_config["epochHideItemDrops"] or "0"
-    pfQuest_config["toggleBtnX"] = pfQuest_config["toggleBtnX"] or "-75"
-    pfQuest_config["toggleBtnY"] = pfQuest_config["toggleBtnY"] or "-12"
 end
 
 local f = CreateFrame("Frame")
@@ -1139,176 +1145,3 @@ f:SetScript(
         ExtendPfQuestConfig()
     end
 )
-
--- Icon Sizes section. Registered separately so it appends AFTER the Announce
--- header that pfQuest-announce.lua adds via its own ADDON_LOADED handler.
--- We poll for that header so panel order is "Continent Map -> Map Toggle
--- Buttons -> Announce -> Icon Sizes" regardless of framerate.
-local function ExtendPfQuestConfigIconSizes(requireAnnounce)
-    if not pfQuest_defconfig or not pfQuest_config then return false end
-
-    local announceFound, alreadyAdded = false, false
-    for _, entry in pairs(pfQuest_defconfig) do
-        if entry.text == "Announce" and entry.type == "header" then
-            announceFound = true
-        elseif entry.text == "|cff33ffccIcon Sizes|r" and entry.type == "header" then
-            alreadyAdded = true
-        end
-    end
-
-    if alreadyAdded then return true end
-    if requireAnnounce and not announceFound then return false end
-
-    table.insert(pfQuest_defconfig, { text = "|cff33ffccIcon Sizes|r", type = "header" })
-    table.insert(pfQuest_defconfig, { text = "Continent Node Size",         default = "12", type = "text", config = "continentNodeSize"        })
-    table.insert(pfQuest_defconfig, { text = "Continent Utility Node Size", default = "14", type = "text", config = "continentUtilityNodeSize" })
-    table.insert(pfQuest_defconfig, { text = "World Map Node Size",         default = "14", type = "text", config = "worldmapNodeSize"         })
-    table.insert(pfQuest_defconfig, { text = "World Map Utility Node Size", default = "14", type = "text", config = "worldmapUtilityNodeSize"  })
-
-    pfQuest_config["continentNodeSize"]        = pfQuest_config["continentNodeSize"]        or "12"
-    pfQuest_config["continentUtilityNodeSize"] = pfQuest_config["continentUtilityNodeSize"] or "14"
-    pfQuest_config["worldmapNodeSize"]         = pfQuest_config["worldmapNodeSize"]         or "14"
-    pfQuest_config["worldmapUtilityNodeSize"]  = pfQuest_config["worldmapUtilityNodeSize"]  or "14"
-
-    return true
-end
-
-local iconSizesLoader = CreateFrame("Frame")
-iconSizesLoader:RegisterEvent("ADDON_LOADED")
-iconSizesLoader:SetScript("OnEvent", function(self, event, addonName)
-    if event == "ADDON_LOADED" and addonName == "pfQuest-epoch" then
-        self:UnregisterEvent("ADDON_LOADED")
-        local timer = 0
-        self:SetScript("OnUpdate", function()
-            timer = timer + 1
-            if ExtendPfQuestConfigIconSizes(true) then
-                self:SetScript("OnUpdate", nil)
-            elseif timer > 600 then
-                -- Announce header never appeared (announce module disabled);
-                -- append Icon Sizes anyway after ~10s so the options exist.
-                ExtendPfQuestConfigIconSizes(false)
-                self:SetScript("OnUpdate", nil)
-            end
-        end)
-    end
-end)
-
-
-local function CreateTrackingToggleButtons()
-    local BTN_W, BTN_H = 56, 10
-    local FONT_SIZE = 7
-    -- Anchor + parent to the visible map viewport so the buttons stay pinned
-    -- to its top-right and scale with the map mode. WorldMapScrollFrame is
-    -- created by Magnify (clipped, mode-scaled, doesn't pan/zoom); in default
-    -- 3.3.5 we fall back to WorldMapDetailFrame which scales with the mode.
-    local guide = WorldMapScrollFrame or WorldMapDetailFrame
-
-    local function GetX() return tonumber(pfQuest_config["toggleBtnX"]) or -68 end
-    local function GetY() return tonumber(pfQuest_config["toggleBtnY"]) or -56 end
-
-    local function MakeToggleButton(name, trackKey, yOffset)
-        local btn = CreateFrame("Button", "pfQuest"..name.."ToggleBtn", guide)
-        btn:SetWidth(BTN_W)
-        btn:SetHeight(BTN_H)
-        btn:SetFrameStrata("DIALOG")
-        btn:SetFrameLevel(100)
-        btn:EnableMouse(true)
-        btn:SetPoint("TOPRIGHT", guide, "TOPRIGHT", GetX(), yOffset)
-
-
-        btn:SetBackdrop({
-            bgFile   = "Interface\\Tooltips\\UI-Tooltip-Background",
-            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-            tile = true, tileSize = 8, edgeSize = 6,
-            insets = { left=1, right=1, top=1, bottom=1 },
-        })
-        btn:SetBackdropColor(0.1, 0.1, 0.1, 0.85)
-        btn:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
-
-
-        local label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        label:SetFont(label:GetFont(), FONT_SIZE, "OUTLINE")
-        label:SetAllPoints(btn)
-        label:SetJustifyH("CENTER")
-        label:SetJustifyV("MIDDLE")
-        btn.label = label
-
-
-        btn:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
-
-
-        local function UpdateText()
-            if pfQuest_track and pfQuest_track[trackKey] then
-                label:SetText(name..": |cff33ff33ON|r")
-                btn:SetBackdropColor(0.05, 0.2, 0.05, 0.9)
-            else
-                label:SetText(name..": |cffff4444OFF|r")
-                btn:SetBackdropColor(0.1, 0.1, 0.1, 0.85)
-            end
-        end
-
-
-        btn:SetScript("OnClick", function()
-            if pfQuest_track and pfQuest_track[trackKey] then
-                pfDatabase:TrackMeta(trackKey, false)
-            else
-                pfDatabase:TrackMeta(trackKey, {})
-            end
-            pfMap:UpdateNodes()
-            UpdateText()
-        end)
-
-
-        btn:SetScript("OnEnter", function()
-            GameTooltip:SetOwner(btn, "ANCHOR_BOTTOMLEFT")
-            GameTooltip:SetText("pfQuest "..name, 1, 1, 1)
-            if pfQuest_track and pfQuest_track[trackKey] then
-                GameTooltip:AddLine("Click to stop tracking "..string.lower(name)..".", 0.8, 0.8, 0.8, true)
-            else
-                GameTooltip:AddLine("Click to track "..string.lower(name).." on the map.", 0.8, 0.8, 0.8, true)
-            end
-            GameTooltip:AddLine("|cff33ffcc/db track "..trackKey.."|r", 0.6, 0.6, 0.6, true)
-            GameTooltip:Show()
-        end)
-
-
-        btn:SetScript("OnLeave", function()
-            GameTooltip:Hide()
-        end)
-
-
-        UpdateText()
-        return UpdateText
-    end
-
-
-    local refreshRares  = MakeToggleButton("Rares",  "rares",  GetY())
-    local refreshChests = MakeToggleButton("Chests", "chests", GetY() - BTN_H)
-
-
-    local syncFrame = CreateFrame("Frame")
-    syncFrame:RegisterEvent("WORLD_MAP_UPDATE")
-    syncFrame:SetScript("OnEvent", function()
-        pfQuestRaresToggleBtn:ClearAllPoints()
-        pfQuestRaresToggleBtn:SetPoint("TOPRIGHT", guide, "TOPRIGHT", GetX(), GetY())
-        pfQuestChestsToggleBtn:ClearAllPoints()
-        pfQuestChestsToggleBtn:SetPoint("TOPRIGHT", guide, "TOPRIGHT", GetX(), GetY() - BTN_H)
-        refreshRares()
-        refreshChests()
-    end)
-
-
-    local origUpdateNodes = pfMap.UpdateNodes
-    pfMap.UpdateNodes = function(self)
-        origUpdateNodes(self)
-        refreshRares()
-        refreshChests()
-    end
-end
-
-
-local pfTrackBtnLoader = CreateFrame("Frame")
-pfTrackBtnLoader:RegisterEvent("VARIABLES_LOADED")
-pfTrackBtnLoader:SetScript("OnEvent", function()
-    CreateTrackingToggleButtons()
-end)

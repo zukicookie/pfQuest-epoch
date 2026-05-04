@@ -67,55 +67,24 @@ pfDatabase:Reload()
 local updatecheck = CreateFrame("Frame")
 updatecheck:RegisterEvent("PLAYER_ENTERING_WORLD")
 updatecheck:SetScript("OnEvent", function()
-  if event == "PLAYER_ENTERING_WORLD" then
-    if pfDB["quests"]["data-epoch"] then
-      local count = 0
-      for k, v in pairs(pfDB["quests"]["data-epoch"]) do
-        count = count + 1
-      end
-
-      pfQuest:Debug("Project Epoch loaded with |cff33ffcc" .. count .. "|r quests.")
-
-      if not pfQuest_epochcount or pfQuest_epochcount ~= count then
-        pfQuest:Debug("New quests found. Reloading |cff33ffccCache|r")
-        pfQuest_questcache = {}
-      end
-
-      pfQuest_epochcount = count
+  if pfDB["quests"]["data-epoch"] then
+    -- count all known epoch quests
+    local count = 0
+    for k, v in pairs(pfDB["quests"]["data-epoch"]) do
+      count = count + 1
     end
 
-    if QueryQuestsCompleted and not updatecheck.synced then
-      updatecheck.synced = true
-      QueryQuestsCompleted()
-      updatecheck:RegisterEvent("QUEST_QUERY_COMPLETE")
+    pfQuest:Debug("Project Epoch loaded with |cff33ffcc" .. count .. "|r quests.")
+
+    -- check if the last count differs to the current amount of quests
+    if not pfQuest_epochcount or pfQuest_epochcount ~= count then
+      -- remove quest cache to force reinitialisation of all quests.
+      pfQuest:Debug("New quests found. Reloading |cff33ffccCache|r")
+      pfQuest_questcache = {}
     end
 
-  elseif event == "QUEST_QUERY_COMPLETE" then
-    updatecheck:UnregisterEvent("QUEST_QUERY_COMPLETE")
-    local completedQuests = GetQuestsCompleted()
-    if type(completedQuests) == "table" then
-      local newCount = 0
-      for questID, _ in pairs(completedQuests) do
-        if not pfQuest_history[questID] then
-          pfQuest_history[questID] = { time(), UnitLevel("player") }
-          newCount = newCount + 1
-        end
-      end
-      if newCount > 0 then
-        for questID, _ in pairs(pfQuest_history) do
-          local questData = pfDB["quests"]["data"][questID]
-          if questData and questData["close"] then
-            for _, closedID in pairs(questData["close"]) do
-              if not pfQuest_history[closedID] then
-                pfQuest_history[closedID] = { time(), UnitLevel("player") }
-              end
-            end
-          end
-        end
-        pfQuest:ResetAll()
-        DEFAULT_CHAT_FRAME:AddMessage("|cff33ffccpf|cffffffffQuest |cffcccccc[Epoch DB]|r: Synced " .. newCount .. " completed " .. (newCount == 1 and "quest" or "quests") .. " from server history.")
-      end
-    end
+    -- write current count to the saved variable
+    pfQuest_epochcount = count
   end
 end)
 
@@ -273,11 +242,7 @@ function pfDatabase:QuestFilter(id, plevel, pclass, prace)
     if not playerSkillLevel or quest["skillmin"] and playerSkillLevel < quest["skillmin"] then return end
   end
   -- hide lowlevel quests using WoW's gray level system
-  if quest["lvl"] and quest["lvl"] <= GetGrayLevel(plevel) and pfQuest_config["showlowlevel"] == "0" then
-    local loc = pfDB.quests.loc[id]
-    local isCommission = loc and loc.T and string.find(loc.T, "Commission for")
-    if not isCommission then return end
-  end
+  if quest["lvl"] and quest["lvl"] <= GetGrayLevel(plevel) and pfQuest_config["showlowlevel"] == "0" then return end
   -- hide highlevel quests (or show those that are 3 levels above)
   if quest["min"] and quest["min"] > plevel + ( pfQuest_config["showhighlevel"] == "1" and 3 or 0 ) then return end
   -- hide event quests
@@ -1003,7 +968,8 @@ end
 local originalNodeEnter = pfMap.NodeEnter
 pfMap.NodeEnter = function()
   if not this or not this.node then
-	Epoch_MapNodeEnter(originalNodeEnter)
+    if originalNodeEnter then originalNodeEnter() end
+    return
   end
 
   local hasItemStart = false
@@ -1067,9 +1033,79 @@ pfMap.NodeEnter = function()
 
     pfMap.highlight = pfQuest_config["mouseover"] == "1" and this.title
   else
-	Epoch_MapNodeEnter(originalNodeEnter)
+    if originalNodeEnter then
+      originalNodeEnter()
+    end
   end
 end
+
+-- Yoinked from https://github.com/shagu/pfQuest/pull/301 props to BlacRyu
+local original_ResizeNode = pfMap.ResizeNode
+
+-- Make mainmap_inversescale global so we can control it across files
+mainmap_inversescale = 1.0
+
+-- Override ResizeNode to use our global mainmap_inversescale
+function pfMap:ResizeNode(frame, obj)
+  local highlight = frame.texture and pfMap.highlightdb[frame][pfMap.highlight] and true or nil
+  local target = frame.texture and pfQuest.route and pfQuest.route.IsTarget(frame) or nil
+
+  -- set default sizes for different node types
+  frame.defsize = (frame.cluster or frame.layer == 4) and 18 or 14
+  -- Adjust node size if main map is zoomed in/out
+  if (obj ~= "minimap") then
+    if (frame.title and pfQuest.icons[frame.title]) or frame.icon then
+      -- Adjust for icons being 1 unit smaller than their parent frame
+      -- Looks better to keep the icon size constant even if the frame grows a bit.
+      frame.defsize = (frame.defsize - 2) * (mainmap_inversescale) + 2
+    else
+      frame.defsize = frame.defsize * mainmap_inversescale
+    end
+  end
+
+  -- make the current route target visible
+  if target then frame.hl:Show() else frame.hl:Hide() end
+
+  -- reset frame size except for highlights
+  if not highlight then
+    frame:SetWidth(frame.defsize)
+    frame:SetHeight(frame.defsize)
+  end
+end
+
+-- Define ResizeNodes function (doesn't exist in base pfQuest)
+function pfMap:ResizeNodes()
+  local i = 1
+  if pfMap.pins then
+    while pfMap.pins[i] and pfMap.pins[i]:IsShown() do
+      pfMap:ResizeNode(pfMap.pins[i])
+      i = i + 1
+    end
+  end
+end
+
+-- Handle map scale changes
+function pfMap:OnMapScaleChanged(frame, scale, hookedfunction)
+  hookedfunction(frame, scale)
+
+  local new_inversescale = 1.0 / WorldMapButton:GetEffectiveScale()
+  if (mainmap_inversescale ~= new_inversescale) then
+    mainmap_inversescale = new_inversescale
+    pfMap:ResizeNodes()
+  end
+end
+
+-- Listen for WorldMapFrame scale changes
+local pfHookWorldMapFrame_SetScale = WorldMapFrame.SetScale
+WorldMapFrame.SetScale = function(frame, scale) pfMap:OnMapScaleChanged(frame, scale, pfHookWorldMapFrame_SetScale) end
+
+-- Listen for WorldMapDetailFrame scale changes
+local pfHookWorldMapDetailFrame_SetScale = WorldMapDetailFrame.SetScale
+WorldMapDetailFrame.SetScale = function(frame, scale) pfMap:OnMapScaleChanged(frame, scale, pfHookWorldMapDetailFrame_SetScale) end
+
+-- Listen for WorldMapButton scale changes
+local pfHookWorldMapButton_SetScale = WorldMapButton.SetScale
+WorldMapButton.SetScale = function(frame, scale) pfMap:OnMapScaleChanged(frame, scale, pfHookWorldMapButton_SetScale) end
 
 function pfDatabase:BuildQuestDescription(meta)
   if not meta.title or not meta.quest or not meta.QTYPE then return meta.description end
