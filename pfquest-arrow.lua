@@ -21,11 +21,15 @@ local function ExtendPfQuestConfig()
     {
         text = "Arrow Scale",
         default = "1.0",
+        min = "0.5",
+        max = "3",
         type = "text",
+        type_ex = "slider",
         config = "arrowscale",
+        func = ResizeArrow,
     })
 
-    if not pfQuest_config["arrowscale"] then
+    if not pfQuest_config["arrowscale"] then        
         pfQuest_config["arrowscale"] = "1.0"
     end
 end
@@ -40,6 +44,11 @@ function ResizeArrow()
     local scale = tonumber(pfQuest_config["arrowscale"]) or 1
     scale = max(0.5, min(3.0, scale))
     scale = floor(scale * 10 + 0.5) / 10
+
     pfQuest_config["arrowscale"] = tostring(scale)
+
+    -- GetModifiedConfig() is set so that the UI doesn't get reloaded after pressing OK
+    GetModifiedConfig()["arrowscale"] = pfQuest_config["arrowscale"]
+
     pfQuest.route.arrow:SetScale(pfQuest_config["arrowscale"])
 end
