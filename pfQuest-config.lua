@@ -21,6 +21,10 @@ local function RebuildConfigUI()
     return true
 end
 
+local function OnConfigUIRebuilt()
+    ResizeArrow()
+end
+
 local configFrame = CreateFrame("Frame")
 configFrame:RegisterEvent("VARIABLES_LOADED")
 configFrame:SetScript("OnEvent", function(self, event)
@@ -33,6 +37,7 @@ configFrame:SetScript("OnEvent", function(self, event)
                 if RebuildConfigUI() then
                     self:SetScript("OnUpdate", nil)
                     self:UnregisterAllEvents()
+                    OnConfigUIRebuilt()
                 elseif timer > 300 then
                     self:SetScript("OnUpdate", nil)
                     self:UnregisterAllEvents()
