@@ -1,4 +1,6 @@
 local original_UpdateNodes = pfMap.UpdateNodes
+local original_UpdateNode = pfMap.UpdateNode
+
 local continentPins = {}
 local maxContinentPins = 2000 -- guessing here but more is better if possible
 
@@ -283,14 +285,30 @@ local function ResizeContinentNode(frame)
     frame.hl:SetHeight(frame.defsize)
 end
 
-local function ResizeContinentNodes()
-    local i = 1
-    if continentPins then
-        while continentPins[i] and continentPins[i]:IsShown() do
-            ResizeContinentNode(continentPins[i])
-            i = i + 1
+local lastResize = 0
+local doResize = false
+
+local nodeResizeFrame = CreateFrame("Frame")
+nodeResizeFrame:SetScript("OnUpdate", function(self, elapsed)
+    lastResize = lastResize + elapsed
+    if doResize and lastResize >= 1 then -- only resize in batches, once every second, to avoid  stuttering
+        lastResize = 0
+        doResize = false
+
+        pfMap:UpdateNodes()
+        
+        local i = 1
+        if continentPins then
+            while continentPins[i] and continentPins[i]:IsShown() do
+                ResizeContinentNode(continentPins[i])
+                i = i + 1
+            end
         end
     end
+end)
+
+local function ResizeContinentNodes()
+    doResize = true
 end
 
 -- Resize icons on map zoom change
@@ -447,6 +465,16 @@ local function CreateContinentPin(index)
         continentPins[index] = pin
     end
     return continentPins[index]
+end
+
+function pfMap:UpdateNode(frame, node, color, obj, distance)
+    original_UpdateNode(self, frame, node, color, obj, distance)
+
+    if obj == "minimap" then
+        return
+    end
+
+    ResizeContinentNode(frame)
 end
 
 function pfMap:UpdateNodes()
